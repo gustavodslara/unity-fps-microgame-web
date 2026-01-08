@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en-us">
+
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <title>UNRENDER | Unity FPS Demo</title>
+  <link rel="shortcut icon" href="TemplateData/favicon.ico">
+  <link rel="stylesheet" href="TemplateData/style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.10.1/nipplejs.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+
+<body>
+  <div id="unity-container" class="unity-desktop">
+    <canvas id="unity-canvas" width=960 height=540 tabindex="-1"></canvas>
+    <div id="unity-loading-bar">
+      <div id="unity-logo"></div>
+      <div id="unity-progress-bar-empty">
+        <div id="unity-progress-bar-full"></div>
+      </div>
+    </div>
+    <div id="unity-warning"> </div>
+    <div id="unity-footer">
+      <div id="unity-logo-title-footer"></div>
+      <div id="unity-fullscreen-button"></div>
+      <div id="unity-build-title">UNRENDER | Unity FPS Demo</div>
+    </div>
+  </div>
+  <script>
+    var canvas = document.querySelector("#unity-canvas");
+
+    // Shows a temporary message banner/ribbon for a few seconds, or
+    // a permanent error message on top of the canvas if type=='error'.
+    // If type=='warning', a yellow highlight color is used.
+    // Modify or remove this function to customize the visually presented
+    // way that non-critical warnings and error messages are presented to the
+    // user.
+    function unityShowBanner(msg, type) {
+      var warningBanner = document.querySelector("#unity-warning");
+      function updateBannerVisibility() {
+        warningBanner.style.display = warningBanner.children.length ? 'block' : 'none';
+      }
+      var div = document.createElement('div');
+      div.innerHTML = msg;
+      warningBanner.appendChild(div);
+      if (type == 'error') div.style = 'background: red; padding: 10px;';
+      else {
+        if (type == 'warning') div.style = 'background: yellow; padding: 10px;';
+        setTimeout(function () {
+          warningBanner.removeChild(div);
+          updateBannerVisibility();
+        }, 5000);
+      }
+      updateBannerVisibility();
+    }
+
+    var buildUrl = "Build";
+    var loaderUrl = buildUrl + "/fps-demo-web-build.loader.js";
+    var config = {
+      arguments: [],
+      dataUrl: buildUrl + "/fps-demo-web-build.data.unityweb",
+      frameworkUrl: buildUrl + "/fps-demo-web-build.framework.js.unityweb",
+      codeUrl: buildUrl + "/fps-demo-web-build.wasm.unityweb",
+      streamingAssetsUrl: "StreamingAssets",
+      companyName: "DefaultCompany",
+      productName: "fps-demo",
+      productVersion: "5.0.4",
+      showBanner: unityShowBanner,
+      // errorHandler: function(err, url, line) {
+      //    alert("error " + err + " occurred at line " + line);
+      //    // Return 'true' if you handled this error and don't want Unity
+      //    // to process it further, 'false' otherwise.
+      //    return true;
+      // },
+    };
+
+    // By default, Unity keeps WebGL canvas render target size matched with
+    // the DOM size of the canvas element (scaled by window.devicePixelRatio)
+    // Set this to false if you want to decouple this synchronization from
+    // happening inside the engine, and you would instead like to size up
+    // the canvas DOM size and WebGL render target sizes yourself.
+    // config.matchWebGLToCanvasSize = false;
+
+    // If you would like all file writes inside Unity Application.persistentDataPath
+    // directory to automatically persist so that the contents are remembered when
+    // the user revisits the site the next time, uncomment the following line:
+    // config.autoSyncPersistentDataPath = true;
+    // This autosyncing is currently not the default behavior to avoid regressing
+    // existing user projects that might rely on the earlier manual
+    // JS_FileSystem_Sync() behavior, but in future Unity version, this will be
+    // expected to change.
+
+    if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+      // Mobile device style: fill the whole browser client area with the game canvas:
+
+      var meta = document.createElement('meta');
+      meta.name = 'viewport';
+      meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes';
+      document.getElementsByTagName('head')[0].appendChild(meta);
+      document.querySelector("#unity-container").className = "unity-mobile";
+      canvas.className = "unity-mobile";
+
+      // --- Virtual Joystick & Buttons Implementation ---
+
+      // 1. Helper Functions for Input Emulation
+      function simulateKey(keyCode, type, code) {
+        var event = new KeyboardEvent(type, {
+          bubbles: true, cancelable: true,
+          key: code === 'Space' ? ' ' : '',
+          code: code,
+          keyCode: keyCode,
+          which: keyCode
+        });
+        window.dispatchEvent(event);
+        canvas.dispatchEvent(event);
+      }
+
+      function simulateMouse(type, button, buttonsOverride) {
+        var event = new MouseEvent(type, {
+          bubbles: true, cancelable: true,
+          view: window,
+          button: button,
+          buttons: buttonsOverride !== undefined ? buttonsOverride : (button === 0 ? 1 : 2)
+        });
+        canvas.dispatchEvent(event);
+      }
+
+      // 2. UI Elements Construction
+
+      const uiContainer = document.createElement('div');
+      uiContainer.id = 'mobile-ui-container';
+      uiContainer.style.cssText = "position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 9999;";
+      document.body.appendChild(uiContainer);
+
+      // Joystick Zone (Left)
+      var joystickZone = document.createElement('div');
+      joystickZone.id = 'joystick-zone';
+      joystickZone.style.cssText = "position: absolute; bottom: 5vh; left: 5vw; width: 25vmin; height: 25vmin; pointer-events: auto;";
+      uiContainer.appendChild(joystickZone);
+
+      // Buttons Container (Right)
+      var buttonsContainer = document.createElement('div');
+      buttonsContainer.id = 'buttons-container';
+      buttonsContainer.style.cssText = "position: absolute; bottom: 5vh; right: 5vw; display: block; width: 25vmin; height: 25vmin; pointer-events: auto;";
+      uiContainer.appendChild(buttonsContainer);
+
+      // Button Component
+      function createButton(iconClass, id, color = 'rgba(255, 255, 255, 0.5)') {
+        const btn = document.createElement('div');
+        btn.id = id;
+        btn.style.cssText = `width: 9vmin; height: 9vmin; background: ${color}; border-radius: 50%; display: flex; justify-content: center; align-items: center; color: white; font-size: 4vmin; user-select: none; touch-action: none;`;
+        btn.innerHTML = `<i class="${iconClass}"></i>`;
+        return btn;
+      }
+
+      // Create specific buttons
+      const btnJump = createButton('fas fa-arrow-up', 'btn-jump'); // Space
+      const btnRun = createButton('fas fa-person-running', 'btn-run'); // Shift
+      const btnShoot = createButton('fas fa-fire', 'btn-shoot', 'rgba(255, 0, 0, 0.5)'); // LMB (Fire Icon)
+      const btnAim = createButton('fas fa-crosshairs', 'btn-aim'); // RMB (Crosshairs Icon)
+
+      // Helper to position
+      const pos = (btn, bottomPct, rightPct) => {
+        btn.style.position = 'absolute';
+        btn.style.bottom = bottomPct + '%';
+        btn.style.right = rightPct + '%';
+        buttonsContainer.appendChild(btn);
+      };
+
+      // Layout: Aim (TopLeft), Run (TopRight), Shoot (BottomLeft), Jump (BottomRight)
+      pos(btnAim, 60, 50);
+      pos(btnRun, 60, 10);
+      pos(btnShoot, 10, 50);
+      pos(btnJump, 10, 10);
+
+      // 3. Logic Implementation
+
+      // -- Joystick (NippleJS) --
+      var manager = nipplejs.create({
+        zone: joystickZone,
+        mode: 'static',
+        position: { left: '50%', top: '50%' },
+        color: 'white',
+        size: 100
+      });
+
+      // WASD State
+      let keysState = { w: false, s: false, a: false, d: false };
+      const preventStickiness = () => {
+        if (keysState.w) simulateKey(87, 'keyup', 'KeyW');
+        if (keysState.s) simulateKey(83, 'keyup', 'KeyS');
+        if (keysState.a) simulateKey(65, 'keyup', 'KeyA');
+        if (keysState.d) simulateKey(68, 'keyup', 'KeyD');
+        keysState = { w: false, s: false, a: false, d: false };
+      };
+
+      manager.on('move', function (evt, data) {
+        const x = data.vector.x;
+        const y = data.vector.y;
+        const threshold = 0.3;
+
+        // UP (W)
+        if (y > threshold) {
+          if (!keysState.w) { simulateKey(87, 'keydown', 'KeyW'); keysState.w = true; }
+        } else {
+          if (keysState.w) { simulateKey(87, 'keyup', 'KeyW'); keysState.w = false; }
+        }
+
+        // DOWN (S)
+        if (y < -threshold) {
+          if (!keysState.s) { simulateKey(83, 'keydown', 'KeyS'); keysState.s = true; }
+        } else {
+          if (keysState.s) { simulateKey(83, 'keyup', 'KeyS'); keysState.s = false; }
+        }
+
+        // LEFT (A)
+        if (x < -threshold) {
+          if (!keysState.a) { simulateKey(65, 'keydown', 'KeyA'); keysState.a = true; }
+        } else {
+          if (keysState.a) { simulateKey(65, 'keyup', 'KeyA'); keysState.a = false; }
+        }
+
+        // RIGHT (D)
+        if (x > threshold) {
+          if (!keysState.d) { simulateKey(68, 'keydown', 'KeyD'); keysState.d = true; }
+        } else {
+          if (keysState.d) { simulateKey(68, 'keyup', 'KeyD'); keysState.d = false; }
+        }
+      });
+
+      manager.on('end', function (evt, data) {
+        preventStickiness();
+      });
+
+      // -- Buttons --
+
+      // Helper for touch events
+      function bindBtn(btn, startFn, endFn) {
+        btn.addEventListener('touchstart', (e) => { e.preventDefault(); startFn(); });
+        btn.addEventListener('touchend', (e) => { e.preventDefault(); if (endFn) endFn(); });
+        btn.addEventListener('mousedown', (e) => { e.preventDefault(); startFn(); });
+        btn.addEventListener('mouseup', (e) => { e.preventDefault(); if (endFn) endFn(); });
+      }
+
+      // Jump (Space)
+      bindBtn(btnJump,
+        () => simulateKey(32, 'keydown', 'Space'),
+        () => simulateKey(32, 'keyup', 'Space')
+      );
+
+      // Run (Shift)
+      bindBtn(btnRun,
+        () => simulateKey(16, 'keydown', 'ShiftLeft'),
+        () => simulateKey(16, 'keyup', 'ShiftLeft')
+      );
+
+      // Shoot (LMB)
+      bindBtn(btnShoot,
+        () => simulateMouse('mousedown', 0, 1),
+        () => simulateMouse('mouseup', 0, 0)
+      );
+
+      // Aim (RMB Toggle)
+      let isAiming = false;
+      bindBtn(btnAim, () => {
+        isAiming = !isAiming;
+        if (isAiming) {
+          simulateMouse('mousedown', 2, 2);
+          btnAim.style.background = 'rgba(0, 255, 0, 0.5)';
+        } else {
+          simulateMouse('mouseup', 2, 0);
+          btnAim.style.background = 'rgba(255, 255, 255, 0.5)';
+        }
+      });
+      // ---------------------------------------
+
+      // To lower canvas resolution on mobile devices to gain some
+      // performance, uncomment the following line:
+      // config.devicePixelRatio = 1;
+
+
+    } else {
+      // Desktop style: Render the game canvas in a window that can be maximized to fullscreen:
+      canvas.style.width = "960px";
+      canvas.style.height = "540px";
+    }
+
+    document.querySelector("#unity-loading-bar").style.display = "block";
+
+    var script = document.createElement("script");
+    script.src = loaderUrl;
+    script.onload = () => {
+      createUnityInstance(canvas, config, (progress) => {
+        document.querySelector("#unity-progress-bar-full").style.width = 100 * progress + "%";
+      }).then((unityInstance) => {
+        document.querySelector("#unity-loading-bar").style.display = "none";
+        document.querySelector("#unity-fullscreen-button").onclick = () => {
+          unityInstance.SetFullscreen(1);
+        };
+
+      }).catch((message) => {
+        alert(message);
+      });
+    };
+
+    document.body.appendChild(script);
+
+  </script>
+</body>
+
+</html>
